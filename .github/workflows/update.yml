@@ -1,0 +1,50 @@
+name: Update package
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm base-devel git openssh python curl
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Update PKGBUILD
+        run: bash scripts/update.sh
+
+      - name: Commit changes
+        run: |
+          if git diff --quiet -- PKGBUILD .SRCINFO; then
+            echo 'No package update detected.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PKGBUILD .SRCINFO
+          version="$(source PKGBUILD && printf '%s' "$pkgver")"
+          git commit -m "chore: bump posthog-code-bin to ${version}"
+          git push
+
+      - name: Push to AUR
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          git remote set-url aur ssh://aur@aur.archlinux.org/posthog-code-bin.git || git remote add aur ssh://aur@aur.archlinux.org/posthog-code-bin.git
+          git push aur HEAD:master
