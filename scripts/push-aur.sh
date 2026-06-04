@@ -4,44 +4,41 @@ set -euo pipefail
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
 
-main_branch="${MAIN_BRANCH:-main}"
-aur_branch="${AUR_BRANCH:-aur}"
-aur_remote="${AUR_REMOTE:-aur}"
 pkgbase="$(source PKGBUILD && printf '%s' "$pkgname")"
 aur_url="ssh://aur@aur.archlinux.org/${pkgbase}.git"
-
-if ! git remote get-url "$aur_remote" >/dev/null 2>&1; then
-  git remote add "$aur_remote" "$aur_url"
-fi
-
 tmpdir="$(mktemp -d)"
 cleanup() {
-  git worktree remove -f "$tmpdir" >/dev/null 2>&1 || true
+  rm -rf "$tmpdir"
 }
 trap cleanup EXIT
 
-if git ls-remote --exit-code "$aur_remote" refs/heads/master >/dev/null 2>&1; then
-  git fetch "$aur_remote" master
-  if git show-ref --verify --quiet "refs/heads/${aur_branch}"; then
-    git branch -f "$aur_branch" FETCH_HEAD
-  else
-    git branch "$aur_branch" FETCH_HEAD
-  fi
-elif ! git show-ref --verify --quiet "refs/heads/${aur_branch}"; then
-  git branch "$aur_branch" "$main_branch"
+if git ls-remote --exit-code "$aur_url" refs/heads/master >/dev/null 2>&1; then
+  git clone "$aur_url" "$tmpdir" >/dev/null 2>&1
+else
+  git init "$tmpdir" >/dev/null
+  git -C "$tmpdir" branch -m master >/dev/null
+  git -C "$tmpdir" remote add origin "$aur_url"
 fi
 
-git worktree add "$tmpdir" "$aur_branch" >/dev/null
+for path in "$tmpdir"/* "$tmpdir"/.[!.]* "$tmpdir"/..?*; do
+  [[ -e "$path" ]] || continue
+  [[ "${path##*/}" == '.git' ]] && continue
+  rm -rf -- "$path"
+done
 
-(
-  cd "$tmpdir"
-  git rm -r --ignore-unmatch . >/dev/null
-  git checkout "$main_branch" -- PKGBUILD .SRCINFO LICENSE
+cp PKGBUILD .SRCINFO LICENSE "$tmpdir"/
 
-  if ! git diff --cached --quiet || ! git diff --quiet; then
-    version="$(source PKGBUILD && printf '%s' "$pkgver")"
-    git commit -m "chore: sync AUR package ${version}" >/dev/null
-  fi
+if git config --get user.name >/dev/null 2>&1; then
+  git -C "$tmpdir" config user.name "$(git config --get user.name)"
+fi
+if git config --get user.email >/dev/null 2>&1; then
+  git -C "$tmpdir" config user.email "$(git config --get user.email)"
+fi
 
-  git push "$aur_remote" HEAD:master
-)
+git -C "$tmpdir" add PKGBUILD .SRCINFO LICENSE
+if ! git -C "$tmpdir" diff --cached --quiet || ! git -C "$tmpdir" diff --quiet; then
+  version="$(source PKGBUILD && printf '%s' "$pkgver")"
+  git -C "$tmpdir" commit -m "chore: sync AUR package ${version}" >/dev/null
+fi
+
+git -C "$tmpdir" push origin HEAD:master
