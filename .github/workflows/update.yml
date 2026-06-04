@@ -46,5 +46,4 @@ jobs:
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-          git remote set-url aur ssh://aur@aur.archlinux.org/posthog-code-bin.git || git remote add aur ssh://aur@aur.archlinux.org/posthog-code-bin.git
-          git push aur HEAD:master
+          bash scripts/push-aur.sh

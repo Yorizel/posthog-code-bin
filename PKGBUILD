@@ -1,3 +1,4 @@
+# Maintainer: Manoel Neto <manoel dot carvalhoneto at tutamail dot com>
 pkgname=posthog-code-bin
 _pkgname=posthog-code
 pkgver=0.53.66
